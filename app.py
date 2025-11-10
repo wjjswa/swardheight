@@ -1,82 +1,63 @@
+import os
+import uuid
 from flask import Flask, request, jsonify
 import torch
-from darts_test import load_single_file, test_model_train_iterate
-import os
-# --------------------------------------------------------
-# Flask app initialization
-# --------------------------------------------------------
-app = Flask(__name__)
+import utils
+# import from your existing file
+from darts_test import load_single_file, prediction, FixedCNN
 
-# --------------------------------------------------------
-# Model and configuration setup (runs once at container start)
-# --------------------------------------------------------
+# ------------ Config (env overridable) ------------
+GENOTYPE_PATH = os.getenv("GENOTYPE_PATH", "best_sward_pt.json")
+WEIGHTS_PATH  = os.getenv("WEIGHTS_PATH",  "best_sward_model.pth")
+IN_CHANNELS   = int(os.getenv("IN_CHANNELS", 1))   # 1 for DSM, 3 for RGB
+FC_OUTPUT     = int(os.getenv("FC_OUTPUT",   1))   # regression = 1
+N_LAYERS      = int(os.getenv("N_LAYERS",    3))
+N_NODES       = int(os.getenv("N_NODES",     2))
+C_WIDTH       = int(os.getenv("C_WIDTH",    16))
+MIN_VAL       = float(os.getenv("MIN_VAL", "13.444444444444445"))
+MAX_VAL       = float(os.getenv("MAX_VAL", "30.88888888888889"))
+
+# ------------ App / Model bootstrap ------------
+app = Flask(__name__)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-# paths (relative to container)
-genotype = "data/best_sward_pt.json"
-model_path = "data/best_sward_model.pth"
+# Build architecture once
+genotype = utils.load_genotype(GENOTYPE_PATH)
+model = FixedCNN(genotype, C_in=IN_CHANNELS, C=C_WIDTH,
+                 n_classes=FC_OUTPUT, n_layers=N_LAYERS, n_nodes=N_NODES)
+model.load_state_dict(torch.load(WEIGHTS_PATH, map_location=device))
+model.to(device)
+model.eval()
 
-# dataset normalization parameters (adjust if known)
-min_val = 13.444444444444445
-max_val = 30.88888888888889
-in_channels = 1
-fc_output = 1
-
-print("✅ Model configuration loaded successfully.")
-
-# --------------------------------------------------------
-# Routes
-# --------------------------------------------------------
 @app.route("/", methods=["GET"])
 def home():
-    return jsonify({
-        "message": "Sward Height Estimation API is running.",
-        "usage": "POST an image to /predict"
-    })
-
+    return jsonify({"message": "Sward Height Prediction API is running."})
 
 @app.route("/predict", methods=["POST"])
-def predict():
+def predict_endpoint():
+    # Accept a file field named 'image'
     if "image" not in request.files:
-        return jsonify({"error": "No image file uploaded. Use 'image' field."}), 400
+        return jsonify({"error": "No image file provided (field name should be 'image')."}), 400
 
     file = request.files["image"]
-    image_bytes = file.read()
+
+    # Save to /tmp (writable in Cloud Run) because load_single_file expects a path
+    tmp_path = f"/tmp/{uuid.uuid4().hex}.img"
+    file.save(tmp_path)
 
     try:
-        # Convert file bytes to temporary tensor
-        with open("/tmp/uploaded_image.jpg", "wb") as f:
-            f.write(image_bytes)
-
-        # preprocess image
-        img_tensor = load_single_file("/tmp/uploaded_image.jpg", min_val, max_val, device=device)
-
-        # run model prediction
-        test_preds = test_model_train_iterate(
-            genotype,
-            img_tensor,
-            min_val,
-            max_val,
-            in_channels,
-            fc_output,
-            device,
-        )
-
-        predicted_value = float(test_preds.cpu().numpy().flatten()[0])
-
-        return jsonify({
-            "predicted_height": round(predicted_value, 4),
-            "unit": "cm (example)",
-        })
-
+        img_tensor = load_single_file(tmp_path, MIN_VAL, MAX_VAL, device=device)
+        pred_tensor = prediction(img_tensor, model, MIN_VAL, MAX_VAL, device)
+        pred_value = float(pred_tensor.squeeze().item())
+        return jsonify({"predicted_height": round(pred_value, 4)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-@app.route("/healthz", methods=["GET"])
-def health_check():
-    return jsonify({"status": "healthy"}), 200
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))  # Cloud Run uses this
-    app.run(host="0.0.0.0", port=port)
+    # Cloud Run listens on 8080 by default
+    app.run(host="0.0.0.0", port=8080)
