@@ -7,5 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 8080
-CMD ["python", "app.py"]
+ENV PYTHONUNBUFFERED=1
+
+# Cloud Run exposes PORT env var
+CMD exec gunicorn -b :$PORT -w 1 app:app
