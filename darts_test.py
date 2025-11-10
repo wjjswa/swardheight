@@ -223,9 +223,14 @@ def main_grid():
 
     genotype = 'best_sward_pt.json'
     image_path= 'data/grasslab/map123only/dsm/map123_together_real_dsm_mean/map1_1dsm_segment_1.jpg'
-    dataset_dir= 'data/grasslab/map123only/dsm/map123_together_real_dsm_mean'
 
-    min_val,max_val,in_channels,fc_output = (utils.load_data(dataset_dir))
+    # obtain dataset parameters
+    # dataset_dir= 'data/grasslab/map123only/dsm/map123_together_real_dsm_mean'
+    # min_val,max_val,in_channels,fc_output = (utils.load_data(dataset_dir))
+    min_val= 13.444444444444445
+    max_val= 30.88888888888889
+    in_channels= 1
+    fc_output= 1
 
     img_tensor = load_single_file(image_path, min_val, max_val,device=device)
 
