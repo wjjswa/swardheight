@@ -6,6 +6,14 @@ import utils
 # import from your existing file
 from darts_test import load_single_file, prediction, FixedCNN
 
+import logging, sys, traceback
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    stream=sys.stdout,
+)
+
+
 # ------------ Config (env overridable) ------------
 GENOTYPE_PATH = os.getenv("GENOTYPE_PATH", "best_sward_pt.json")
 WEIGHTS_PATH  = os.getenv("WEIGHTS_PATH",  "best_sward_model.pth")
