@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 import torch
 from darts_test import load_single_file, test_model_train_iterate
-
+import os
 # --------------------------------------------------------
 # Flask app initialization
 # --------------------------------------------------------
@@ -78,4 +78,5 @@ def health_check():
     return jsonify({"status": "healthy"}), 200
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    port = int(os.environ.get("PORT", 8080))  # Cloud Run uses this
+    app.run(host="0.0.0.0", port=port)
